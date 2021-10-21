@@ -15,24 +15,19 @@ fn main() {
         std::process::exit(0);
     }
 
-    if !SudokuBoard::is_string_valid(&args[1]) {
-        println!("input string invalid (you may only use digits and dashes in your input).");
-        println!("The problematic string: \"{}\"", args[1]);
-        std::process::exit(0);
-    }
     // object is created
-    let mut b = SudokuBoard::from_string(&args[1]);
+    let mut b = match SudokuBoard::from_string(&args[1]) {
+        Ok(b) => b,
+        Err(e) => {
+            println!("{}", e);
+            std::process::exit(0);
+        }
+    };
 
     // show the user their initial board, to confirm to
     // them that they have entered the correct CLI string
     println!("\nYour sudoku:");
     b.show();
-
-    // check if the given sudoku is legal as-is, exit early if not
-    if b.current_state_invalid() {
-        println!("input sudoku invalid (given problem has repeated digits in rows, columns, or squares).");
-        std::process::exit(0);
-    }
 
     let start = std::time::Instant::now();
 

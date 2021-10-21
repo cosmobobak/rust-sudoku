@@ -18,23 +18,23 @@ pub fn square(state: &Array2D<u8>, x: usize) -> [u8; 9] {
             out[(row - rstart) * 3 + (col - cstart)] = state[(row, col)];
         }
     }
-    return out;
+    out
 }
 
 impl Default for SudokuBoard {
     fn default() -> SudokuBoard {
-        return SudokuBoard { state: Array2D::filled_with(0u8, 9, 9) }
+        SudokuBoard { state: Array2D::filled_with(0u8, 9, 9) }
     }  
 }
 
 impl SudokuBoard {
-    pub fn from_string(fen: &String) -> SudokuBoard {
+    pub fn from_string(fen: &str) -> SudokuBoard {
         let mut out = SudokuBoard::default();
         out.set_from_string(fen);
-        return out;
+        out
     }
 
-    fn set_from_string(&mut self, fen: &String) {
+    fn set_from_string(&mut self, fen: &str) {
         for (i, c) in fen.chars().enumerate() {
             if c != '-' {
                 self.state[(i / 9, i % 9)] = c.to_digit(10).expect("this should have been validated >:(") as u8;
@@ -42,7 +42,7 @@ impl SudokuBoard {
         }
     }
 
-    pub fn is_string_valid(fen: &String) -> bool {
+    pub fn is_string_valid(fen: &str) -> bool {
         return fen.chars().all(|c| VALID_TOKENS.iter().any(|token| *token == c));
     }
 
@@ -62,7 +62,7 @@ impl SudokuBoard {
                 return i;
             }
         }
-        return 81;
+        81
     }
 
     pub fn current_state_invalid(&mut self) -> bool {
@@ -77,13 +77,13 @@ impl SudokuBoard {
                 self.state[(i / 9, i % 9)] = n;
             }
         }
-        return false;
+        false
     }
 
     fn legal(&self, x: usize, num: u8) -> bool {
-        return self.state.row_iter(x / 9 as usize)
+        return self.state.row_iter(x / 9)
                          .all(|n| *n != num) &&
-               self.state.column_iter(x % 9 as usize)
+               self.state.column_iter(x % 9)
                          .all(|n| *n != num) &&
                square(&self.state, x as usize).iter()
                          .all(|n| *n != num);
@@ -104,6 +104,6 @@ impl SudokuBoard {
                 self.state[(x / 9, x % 9)] = UNASSIGNED;
             }
         }
-        return false;  // this triggers backtracking
+        false  // this triggers backtracking
     }
 }

@@ -7,16 +7,47 @@ pub struct SudokuBoard {
     state: [[u8; 9]; 9]
 }
 
-pub fn square(state: &[[u8; 9]; 9], x: usize) -> [u8; 9] {
-    let rstart = ((x / 9) / 3) * 3;
-    let cstart = ((x % 9) / 3) * 3;
-    let mut out = [0u8; 9];
-    for row in rstart..(3+rstart) {
-        for col in cstart..(3+cstart) {
-            out[(row - rstart) * 3 + (col - cstart)] = state[row][col];
+struct BoxIterator<'a> {
+    row: usize,
+    col: usize,
+    sentinel: usize,
+    board: &'a SudokuBoard
+}
+
+impl BoxIterator<'_> {
+    fn new(x: usize, board: &SudokuBoard) -> BoxIterator {
+        let row = ((x / 9) / 3) * 3;
+        let col = ((x % 9) / 3) * 3;
+        let sentinel = row + 3;
+        BoxIterator {
+            row,
+            col,
+            sentinel,
+            board
         }
     }
-    out
+
+    fn next(&mut self) -> Option<u8> {
+        if (self.col) % 3 == 2 {
+            self.col -= 2;
+            self.row += 1;
+        } else {
+            self.col += 1;
+        }
+        if self.row == self.sentinel {
+            None 
+        } else {
+            Some(self.board.state[self.row][self.col])
+        }
+    }
+}
+
+impl Iterator for BoxIterator<'_> {
+    type Item = u8;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        BoxIterator::next(self)
+    }
 }
 
 impl Default for SudokuBoard {
@@ -84,13 +115,17 @@ impl SudokuBoard {
         false
     }
 
+    fn box_iter(&self, x: usize) -> BoxIterator {
+        BoxIterator::new(x, self)
+    }
+
     fn legal(&self, x: usize, num: u8) -> bool {
         return self.state[x / 9].iter()
                          .all(|n| *n != num) &&
                self.state.iter()
                          .all(|row| row[x % 9] != num) &&
-               square(&self.state, x).iter()
-                         .all(|n| *n != num);
+               self.box_iter(x)
+                         .all(|n| n != num);
     }
 
     pub fn solve(&mut self) -> bool {

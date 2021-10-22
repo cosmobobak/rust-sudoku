@@ -101,9 +101,8 @@ impl SudokuBoard {
     }
 
     fn current_state_invalid(&mut self) -> bool {
-        let mut n;
         for i in 0..81 {
-            n = self.state[i / 9][i % 9];
+            let n = self.state[i / 9][i % 9];
             if n != 0 {
                 self.state[i / 9][i % 9] = 0;
                 if !self.legal(i, n) {

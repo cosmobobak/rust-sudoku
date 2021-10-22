@@ -8,7 +8,8 @@ const BAR: &str = "│ ";
 
 #[derive(Clone)]
 pub struct SudokuBoard {
-    state: [[u8; 9]; 9]
+    state: [[u8; 9]; 9],
+    first_unassigned: usize
 }
 
 struct BoxIterator<'a> {
@@ -93,7 +94,7 @@ impl SudokuBoard {
         if !SudokuBoard::is_string_valid(fen) {
             return Err(format!("input string invalid (you may only use digits and dashes in your input): \"{}\"", fen));
         }
-        let mut out = SudokuBoard { state: [[0; 9]; 9] };
+        let mut out = SudokuBoard { state: [[0; 9]; 9], first_unassigned: 0 };
         out.set_from_string(fen);
         match out.current_state_invalid() {
             false => Ok(out),
@@ -128,9 +129,14 @@ impl SudokuBoard {
         print!("{}", BOTTOM);
     }
 
-    pub fn first_unassigned(&self) -> usize {
-        for i in 0..81 {
-            if self.state[i / 9][i % 9] == 0u8 {
+    fn is_unassigned(&self, n: usize) -> bool {
+        self.state[n / 9][n % 9] == 0
+    }
+
+    pub fn first_unassigned(&mut self) -> usize {
+        for i in self.first_unassigned..81 {
+            if self.is_unassigned(i) {
+                self.first_unassigned = i;
                 return i;
             }
         }
@@ -177,6 +183,7 @@ impl SudokuBoard {
                     return true;
                 }
                 self.state[x / 9][x % 9] = UNASSIGNED;
+                self.first_unassigned = x;
             }
         }
         false  // this triggers backtracking

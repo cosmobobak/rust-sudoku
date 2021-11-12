@@ -1,6 +1,7 @@
+mod sudoku16;
 mod sudoku;
 
-use sudoku::SudokuBoard;
+use sudoku16::SudokuBoard16;
 
 // const easy: &str = "----345----89---3-3----27892-4--6815----4----8765--4-27523----6-1---79----942----";
 // const medium: &str = "---4-6-9------3--545-----866-2-74--1----9----9--56-7-871-----643--6------6-9-2---";
@@ -16,7 +17,7 @@ fn main() {
     }
 
     // object is created
-    let mut b = match SudokuBoard::from_string(&args[1]) {
+    let mut b = match SudokuBoard16::from_string(&args[1]) {
         Ok(b) => b,
         Err(e) => {
             println!("{}", e);

@@ -1,17 +1,18 @@
 const UNASSIGNED: u8 = 0;
-const SYMBOLS: [char; 10] = ['.', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-const DIVIDER: &str = "├───────┼───────┼───────┤\n";
-const TOP: &str = "┌───────┬───────┬───────┐\n";
-const BOTTOM: &str = "└───────┴───────┴───────┘\n";
+const SYMBOLS: [char; 17] = ['.', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', '0'];
+const DIVIDER: &str = "├─────────┼─────────┼─────────┼─────────┤\n";
+const TOP: &str = "┌─────────┬─────────┬─────────┬─────────┐\n";
+const BOTTOM: &str = "└─────────┴─────────┴─────────┴─────────┘\n";
 const BAR: &str = "│ ";
 
-const WIDTH: usize = 9;
-const HEIGHT: usize = 9;
+const WIDTH: usize = 16;
+const HEIGHT: usize = 16;
 const NUM_LOCATIONS: usize = WIDTH * HEIGHT;
-const MAX_VALUE: u8 = 9;
+const MAX_VALUE: u8 = 16;
+const EMPTY: u8 = 0;
 
 #[derive(Clone)]
-pub struct SudokuBoard {
+pub struct SudokuBoard16 {
     state: [[u8; WIDTH]; WIDTH]
 }
 
@@ -19,20 +20,20 @@ struct BoxIterator<'a> {
     row: usize,
     col: usize,
     sentinel: usize,
-    board: &'a SudokuBoard,
+    board: &'a SudokuBoard16,
 }
 
 pub struct GlobalIterator<'a> {
     row: usize,
     col: usize,
-    board: &'a SudokuBoard,
+    board: &'a SudokuBoard16,
 }
 
 impl BoxIterator<'_> {
-    fn new(x: usize, board: &SudokuBoard) -> BoxIterator {
-        let row = ((x / WIDTH) / 3) * 3;
-        let col = ((x % WIDTH) / 3) * 3;
-        let sentinel = row + 3;
+    fn new(x: usize, board: &SudokuBoard16) -> BoxIterator {
+        let row = ((x / WIDTH) / 4) * 4;
+        let col = ((x % WIDTH) / 4) * 4;
+        let sentinel = row + 4;
         BoxIterator {
             row,
             col,
@@ -47,8 +48,8 @@ impl BoxIterator<'_> {
         } else {
             Some(self.board.state[self.row][self.col])
         };
-        if (self.col) % 3 == 2 {
-            self.col -= 2;
+        if (self.col) % 4 == 3 {
+            self.col -= 3;
             self.row += 1;
         } else {
             self.col += 1;
@@ -58,7 +59,7 @@ impl BoxIterator<'_> {
 }
 
 impl GlobalIterator<'_> {
-    fn new(board: &SudokuBoard) -> GlobalIterator {
+    fn new(board: &SudokuBoard16) -> GlobalIterator {
         GlobalIterator {
             row: 0,
             col: 0,
@@ -72,7 +73,7 @@ impl GlobalIterator<'_> {
         } else {
             Some(self.board.state[self.row][self.col])
         };
-        if self.col == 8 {
+        if self.col == 15 {
             self.col = 0;
             self.row += 1;
         } else {
@@ -98,16 +99,16 @@ impl Iterator for GlobalIterator<'_> {
     }
 }
 
-impl SudokuBoard {
-    pub fn from_string(fen: &str) -> Result<SudokuBoard, String> {
-        if !SudokuBoard::is_string_valid(fen) {
+impl SudokuBoard16 {
+    pub fn from_string(fen: &str) -> Result<SudokuBoard16, String> {
+        if !SudokuBoard16::is_string_valid(fen) {
             Err(format!(
                 "input string invalid (you may only use digits and dashes in your input): \"{}\"",
                 fen
             ))
         } else {
-            let mut out = SudokuBoard {
-                state: [[0; WIDTH]; WIDTH],
+            let mut out = SudokuBoard16 {
+                state: [[0; WIDTH]; WIDTH]
             };
             out.set_from_string(fen);
             match out.current_state_invalid() {
@@ -120,44 +121,46 @@ impl SudokuBoard {
     fn set_from_string(&mut self, fen: &str) {
         for (i, c) in fen.chars().enumerate() {
             if c != '-' {
-                self.state[i / WIDTH][i % WIDTH] =
-                    c.to_digit(10).expect("this should have been validated >:(") as u8;
+                let digit = c.to_digit(16).expect("this should have been validated >:(") as u8;
+                let digit = if digit == 0 {
+                    MAX_VALUE
+                } else {
+                    digit
+                };
+                self.state[i / WIDTH][i % WIDTH] = digit;
             }
         }
     }
 
     fn is_string_valid(fen: &str) -> bool {
-        fen.chars()
-            .all(|c| c == '-' || c.is_ascii_digit() && c != '0')
+        const LEGALS: [char; 17] = ['-', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', '0'];
+        fen.chars().all(|c| LEGALS.contains(&c))
     }
 
     pub fn show(&self) {
-        println!();
-        print!("{}", TOP);
+        let mut out = String::new();
+        out.push('\n');
+        out.push_str(TOP);
         for (i, row) in self.state.iter().enumerate() {
-            print!("{}", BAR);
+            out.push_str(BAR);
             for (j, val) in row.iter().enumerate() {
-                print!("{} ", SYMBOLS[*val as usize]);
-                if j % 3 == 2 && j != 8 {
-                    print!("{}", BAR);
+                out.push_str(format!("{} ", SYMBOLS[*val as usize]).as_str());
+                if j % 4 == 3 && j != 15 {
+                    out.push_str(BAR);
                 }
             }
-            println!("{}", BAR);
-            if i % 3 == 2 && i != 8 {
-                print!("{}", DIVIDER);
+            out.push_str(BAR);
+            out.push('\n');
+            if i % 4 == 3 && i != 15 {
+                out.push_str(DIVIDER);
             };
         }
-        print!("{}", BOTTOM);
+        out.push_str(BOTTOM);
+        println!("{}", out);
     }
 
-    fn is_unassigned(&self, x: usize) -> bool {
-        self.state[x / WIDTH][x % WIDTH] == 0
-    }
-
-    fn score_unassigned(&self, x: usize) -> usize {
-        let num_constraints_in_row = self.state[x / WIDTH].iter().filter(|v| **v != 0).count();
-        let num_constraints_in_col = self.state.iter().map(|row| row[x % WIDTH]).filter(|v| *v != 0).count();
-        num_constraints_in_row + num_constraints_in_col
+    fn is_unassigned(&self, n: usize) -> bool {
+        self.state[n / WIDTH][n % WIDTH] == 0
     }
 
     pub fn first_unassigned(&self) -> Option<usize> {
@@ -167,18 +170,6 @@ impl SudokuBoard {
             }
         }
         None
-    }
-
-    pub fn choose_unassigned_smart(&mut self) -> Option<usize> {
-        let mut max = 0;
-        let mut loc = None;
-        for i in 0..NUM_LOCATIONS {
-            if self.is_unassigned(i) && (self.score_unassigned(i) > max || loc.is_none()) {
-                max = self.score_unassigned(i);
-                loc = Some(i);
-            }
-        }
-        loc
     }
 
     fn current_state_invalid(&mut self) -> bool {
@@ -219,6 +210,19 @@ impl SudokuBoard {
         options
     }
 
+    fn is_loc_single_constrained(&self, x: usize) -> bool {
+        let mut options = 0;
+        for num in 1..=MAX_VALUE {
+            if self.legal(x, num) {
+                options += 1;
+                if options > 1 {
+                    return false;
+                }
+            }
+        }
+        options == 1
+    }
+
     fn first_legal_for_loc(&self, x: usize) -> Option<u8> {
         for num in 1..=MAX_VALUE {
             if self.legal(x, num) {
@@ -233,10 +237,10 @@ impl SudokuBoard {
         // i.e. if a square can only have one number, fill it with that number.
         // this is a preprocessing step to reduce the search space.
         for (x, v) in self.iter().enumerate() {
-            if v != 0 {
+            if v != EMPTY {
                 continue;
             }
-            if self.options_for_loc(x) == 1 {
+            if self.is_loc_single_constrained(x) {
                 self.state[x / WIDTH][x % WIDTH] = self.first_legal_for_loc(x).unwrap();
                 return true;
             }
@@ -246,11 +250,11 @@ impl SudokuBoard {
     }
 
     pub fn solve_dfs(&mut self) -> bool {
-        let x = match self.choose_unassigned_smart() {
+        let x = match self.first_unassigned() {
             Some(x) => x,
             None => return true,
         };
-
+        
         for num in 1..=MAX_VALUE {
             if self.legal(x, num) {
                 self.state[x / WIDTH][x % WIDTH] = num;
@@ -267,7 +271,7 @@ impl SudokuBoard {
         while self.fill_trivial() {
             // keep filling in trivial squares until we can't do any more
         }
-
+        self.show();
         self.solve_dfs()
     }
 }

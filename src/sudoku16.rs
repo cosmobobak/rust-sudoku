@@ -5,10 +5,11 @@ const TOP: &str = "┌─────────┬─────────�
 const BOTTOM: &str = "└─────────┴─────────┴─────────┴─────────┘\n";
 const BAR: &str = "│ ";
 
-const WIDTH: usize = 16;
-const HEIGHT: usize = 16;
+const BOX_SIZE: usize = 4;
+const WIDTH: usize = BOX_SIZE * BOX_SIZE;
+const HEIGHT: usize = BOX_SIZE * BOX_SIZE;
 const NUM_LOCATIONS: usize = WIDTH * HEIGHT;
-const MAX_VALUE: u8 = 16;
+const MAX_VALUE: u8 = (BOX_SIZE * BOX_SIZE) as u8;
 const EMPTY: u8 = 0;
 
 #[derive(Clone)]
@@ -31,9 +32,9 @@ pub struct GlobalIterator<'a> {
 
 impl BoxIterator<'_> {
     fn new(x: usize, board: &SudokuBoard16) -> BoxIterator {
-        let row = ((x / WIDTH) / 4) * 4;
-        let col = ((x % WIDTH) / 4) * 4;
-        let sentinel = row + 4;
+        let row = ((x / WIDTH) / BOX_SIZE) * BOX_SIZE;
+        let col = ((x % WIDTH) / BOX_SIZE) * BOX_SIZE;
+        let sentinel = row + BOX_SIZE;
         BoxIterator {
             row,
             col,
@@ -48,8 +49,8 @@ impl BoxIterator<'_> {
         } else {
             Some(self.board.state[self.row][self.col])
         };
-        if (self.col) % 4 == 3 {
-            self.col -= 3;
+        if (self.col) % BOX_SIZE == (BOX_SIZE-1) {
+            self.col -= BOX_SIZE - 1;
             self.row += 1;
         } else {
             self.col += 1;
@@ -73,7 +74,7 @@ impl GlobalIterator<'_> {
         } else {
             Some(self.board.state[self.row][self.col])
         };
-        if self.col == 15 {
+        if self.col == (WIDTH - 1) {
             self.col = 0;
             self.row += 1;
         } else {
@@ -138,20 +139,20 @@ impl SudokuBoard16 {
     }
 
     pub fn show(&self) {
-        let mut out = String::new();
+        let mut out = String::with_capacity(WIDTH*WIDTH*10);
         out.push('\n');
         out.push_str(TOP);
         for (i, row) in self.state.iter().enumerate() {
             out.push_str(BAR);
             for (j, val) in row.iter().enumerate() {
                 out.push_str(format!("{} ", SYMBOLS[*val as usize]).as_str());
-                if j % 4 == 3 && j != 15 {
+                if j % BOX_SIZE == (BOX_SIZE - 1) && j != (WIDTH - 1) {
                     out.push_str(BAR);
                 }
             }
             out.push_str(BAR);
             out.push('\n');
-            if i % 4 == 3 && i != 15 {
+            if i % BOX_SIZE == (BOX_SIZE - 1) && i != (WIDTH - 1) {
                 out.push_str(DIVIDER);
             };
         }
@@ -159,23 +160,41 @@ impl SudokuBoard16 {
         println!("{}", out);
     }
 
-    fn is_unassigned(&self, n: usize) -> bool {
-        self.state[n / WIDTH][n % WIDTH] == 0
+    fn is_unassigned(&self, loc: usize) -> bool {
+        self.state[loc / WIDTH][loc % WIDTH] == 0
+    }
+
+    fn score_unassigned(&self, loc: usize) -> usize {
+        let num_constraints_in_row = self.state[loc / WIDTH].iter().filter(|v| **v != 0).count();
+        let num_constraints_in_col = self.state.iter().map(|row| row[loc % WIDTH]).filter(|v| *v != 0).count();
+        num_constraints_in_row + num_constraints_in_col
     }
 
     pub fn first_unassigned(&self) -> Option<usize> {
-        for i in 0..NUM_LOCATIONS {
-            if self.is_unassigned(i) {
-                return Some(i);
+        for loc in 0..NUM_LOCATIONS {
+            if self.is_unassigned(loc) {
+                return Some(loc);
             }
         }
         None
     }
 
+    pub fn choose_unassigned_smart(&mut self) -> Option<usize> {
+        let mut max = 0;
+        let mut loc = None;
+        for i in 0..NUM_LOCATIONS {
+            if self.is_unassigned(i) && (self.score_unassigned(i) > max || loc.is_none()) {
+                max = self.score_unassigned(i);
+                loc = Some(i);
+            }
+        }
+        loc
+    }
+
     fn current_state_invalid(&mut self) -> bool {
         for i in 0..NUM_LOCATIONS {
             let n = self.state[i / WIDTH][i % WIDTH];
-            if n != 0 {
+            if n != UNASSIGNED {
                 self.state[i / WIDTH][i % WIDTH] = 0;
                 if !self.legal(i, n) {
                     return true;
@@ -271,7 +290,6 @@ impl SudokuBoard16 {
         while self.fill_trivial() {
             // keep filling in trivial squares until we can't do any more
         }
-        self.show();
         self.solve_dfs()
     }
 }

@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 mod sudoku16;
 mod sudoku;
 

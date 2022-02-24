@@ -1,8 +1,10 @@
+use std::fmt::{Display, Formatter, self};
+
 const UNASSIGNED: u8 = 0;
 const SYMBOLS: [char; 10] = ['.', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 const DIVIDER: &str = "├───────┼───────┼───────┤\n";
 const TOP: &str = "┌───────┬───────┬───────┐\n";
-const BOTTOM: &str = "└───────┴───────┴───────┘\n";
+const BOTTOM: &str = "└───────┴───────┴───────┘";
 const BAR: &str = "│ ";
 
 const BOX_SIZE: usize = 3;
@@ -14,7 +16,7 @@ const EMPTY: u8 = 0;
 
 #[derive(Clone)]
 pub struct SudokuBoard {
-    state: [[u8; WIDTH]; WIDTH]
+    state: [[u8; WIDTH]; WIDTH],
 }
 
 struct BoxIterator<'a> {
@@ -31,9 +33,21 @@ pub struct GlobalIterator<'a> {
 }
 
 impl BoxIterator<'_> {
-    fn new(x: usize, board: &SudokuBoard) -> BoxIterator {
+    fn new(board: &SudokuBoard, x: usize) -> BoxIterator {
         let row = ((x / WIDTH) / BOX_SIZE) * BOX_SIZE;
         let col = ((x % WIDTH) / BOX_SIZE) * BOX_SIZE;
+        let sentinel = row + BOX_SIZE;
+        BoxIterator {
+            row,
+            col,
+            sentinel,
+            board,
+        }
+    }
+
+    fn from_id(board: &SudokuBoard, x: usize) -> BoxIterator {
+        let row = (x / BOX_SIZE) * BOX_SIZE;
+        let col = (x % BOX_SIZE) * BOX_SIZE;
         let sentinel = row + BOX_SIZE;
         BoxIterator {
             row,
@@ -49,7 +63,7 @@ impl BoxIterator<'_> {
         } else {
             Some(self.board.state[self.row][self.col])
         };
-        if (self.col) % BOX_SIZE == (BOX_SIZE-1) {
+        if (self.col) % BOX_SIZE == (BOX_SIZE - 1) {
             self.col -= BOX_SIZE - 1;
             self.row += 1;
         } else {
@@ -60,7 +74,6 @@ impl BoxIterator<'_> {
 }
 
 impl GlobalIterator<'_> {
-    
     fn new(board: &SudokuBoard) -> GlobalIterator {
         GlobalIterator {
             row: 0,
@@ -134,35 +147,22 @@ impl SudokuBoard {
         fen.chars().all(|c| LEGALS.contains(&c))
     }
 
-    pub fn show(&self) {
-        let mut out = String::with_capacity(WIDTH*WIDTH*10);
-        out.push('\n');
-        out.push_str(TOP);
-        for (i, row) in self.state.iter().enumerate() {
-            out.push_str(BAR);
-            for (j, val) in row.iter().enumerate() {
-                out.push_str(format!("{} ", SYMBOLS[*val as usize]).as_str());
-                if j % BOX_SIZE == (BOX_SIZE - 1) && j != (WIDTH - 1) {
-                    out.push_str(BAR);
-                }
-            }
-            out.push_str(BAR);
-            out.push('\n');
-            if i % BOX_SIZE == (BOX_SIZE - 1) && i != (WIDTH - 1) {
-                out.push_str(DIVIDER);
-            };
-        }
-        out.push_str(BOTTOM);
-        println!("{}", out);
-    }
-
     fn is_unassigned(&self, loc: usize) -> bool {
         self.state[loc / WIDTH][loc % WIDTH] == 0
     }
 
-    fn score_unassigned(&self, loc: usize) -> usize {
+    fn is_unassigned_xy(&self, x: usize, y: usize) -> bool {
+        self.state[x][y] == 0
+    }
+
+    fn constraints(&self, loc: usize) -> usize {
         let num_constraints_in_row = self.state[loc / WIDTH].iter().filter(|v| **v != 0).count();
-        let num_constraints_in_col = self.state.iter().map(|row| row[loc % WIDTH]).filter(|v| *v != 0).count();
+        let num_constraints_in_col = self
+            .state
+            .iter()
+            .map(|row| row[loc % WIDTH])
+            .filter(|v| *v != 0)
+            .count();
         num_constraints_in_row + num_constraints_in_col
     }
 
@@ -175,12 +175,12 @@ impl SudokuBoard {
         None
     }
 
-    pub fn choose_unassigned_smart(&mut self) -> Option<usize> {
+    pub fn most_constrained(&mut self) -> Option<usize> {
         let mut max = 0;
         let mut loc = None;
         for i in 0..NUM_LOCATIONS {
-            if self.is_unassigned(i) && (self.score_unassigned(i) > max || loc.is_none()) {
-                max = self.score_unassigned(i);
+            if self.is_unassigned(i) && (self.constraints(i) > max || loc.is_none()) {
+                max = self.constraints(i);
                 loc = Some(i);
             }
         }
@@ -206,13 +206,19 @@ impl SudokuBoard {
     }
 
     fn box_iter(&self, x: usize) -> BoxIterator {
-        BoxIterator::new(x, self)
+        BoxIterator::new(self, x)
     }
 
     fn legal(&self, x: usize, num: u8) -> bool {
         self.state[x / WIDTH].iter().all(|n| *n != num)
             && self.state.iter().all(|row| row[x % WIDTH] != num)
             && self.box_iter(x).all(|n| n != num)
+    }
+
+    fn legal_xy(&self, x: usize, y: usize, num: u8) -> bool {
+        self.state[x].iter().all(|n| *n != num)
+            && self.state.iter().all(|row| row[y] != num)
+            && self.box_iter(x * WIDTH + y).all(|n| n != num)
     }
 
     fn options_for_loc(&self, x: usize) -> usize {
@@ -264,8 +270,104 @@ impl SudokuBoard {
         false
     }
 
+    fn fill_only_in_box(&mut self, box_num: usize) -> bool {
+        // for each option, count how many squares could legally have that option
+        // if there is only one such square, fill it in.
+        let row_tl = (box_num / BOX_SIZE) * BOX_SIZE;
+        let col_tl = (box_num % BOX_SIZE) * BOX_SIZE;
+        let mut mutated = false;
+        for num in 1..=MAX_VALUE {
+            let mut found_single_option = false;
+            let mut row = 0;
+            let mut col = 0;
+            for (l, v) in BoxIterator::from_id(self, box_num).enumerate() {
+                if v != UNASSIGNED {
+                    continue;
+                }
+                let r = row_tl + l / BOX_SIZE;
+                let c = col_tl + l % BOX_SIZE;
+                if self.legal_xy(r, c, num) {
+                    if found_single_option {
+                        found_single_option = false;
+                        break;
+                    }
+                    found_single_option = true;
+                    row = r;
+                    col = c;
+                }
+            }
+            if found_single_option {
+                debug_assert!(self.state[row][col] == UNASSIGNED);
+                self.state[row][col] = num;
+                mutated = true;
+            }
+        }
+        // return whether we mutated the board at all
+        mutated
+    }
+
+    fn fill_only_in_row(&mut self, row: usize) -> bool {
+        // for each option, count how many squares could legally have that option
+        // if there is only one such square, fill it in.
+        let mut mutated = false;
+        for num in 1..=MAX_VALUE {
+            let mut found_single_option = false;
+            let mut col = 0;
+            for (c, &v) in self.state[row].iter().enumerate() {
+                if v != UNASSIGNED {
+                    continue;
+                }
+                if self.legal_xy(row, c, num) {
+                    if found_single_option {
+                        found_single_option = false;
+                        break;
+                    }
+                    found_single_option = true;
+                    col = c;
+                }
+            }
+            if found_single_option {
+                debug_assert!(self.state[row][col] == UNASSIGNED);
+                self.state[row][col] = num;
+                mutated = true;
+            }
+        }
+        // return whether we mutated the board at all
+        mutated
+    }
+
+    fn fill_only_in_col(&mut self, col: usize) -> bool {
+        // for each option, count how many squares could legally have that option
+        // if there is only one such square, fill it in.
+        let mut mutated = false;
+        for num in 1..=MAX_VALUE {
+            let mut found_single_option = false;
+            let mut row = 0;
+            for (r, v) in self.state.iter().map(|slice| slice[col]).enumerate() {
+                if v != UNASSIGNED {
+                    continue;
+                }
+                if self.legal_xy(r, col, num) {
+                    if found_single_option {
+                        found_single_option = false;
+                        break;
+                    }
+                    found_single_option = true;
+                    row = r;
+                }
+            }
+            if found_single_option {
+                debug_assert!(self.state[row][col] == UNASSIGNED);
+                self.state[row][col] = num;
+                mutated = true;
+            }
+        }
+        // return whether we mutated the board at all
+        mutated
+    }
+
     pub fn solve_dfs(&mut self) -> bool {
-        let x = match self.choose_unassigned_smart() {
+        let x = match self.most_constrained() {
             Some(x) => x,
             None => return true,
         };
@@ -282,10 +384,49 @@ impl SudokuBoard {
         false // this triggers backtracking
     }
 
-    pub fn solve(&mut self) -> bool {
+    pub fn preproc(&mut self) {
         while self.fill_trivial() {
             // keep filling in trivial squares until we can't do any more
         }
+        let mut change_made = true;
+        while change_made {
+            change_made = (0..WIDTH).any(|i| {
+                let a = self.fill_only_in_box(i);
+                let b = self.fill_only_in_row(i);
+                let c = self.fill_only_in_col(i);
+                a || b || c
+            });
+        }
+    }
+
+    pub fn solve(&mut self) -> bool {
+        debug_assert!(!self.current_state_invalid());
+        self.preproc();
+        debug_assert!(!self.current_state_invalid());
         self.solve_dfs()
+    }
+}
+
+impl Display for SudokuBoard {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let mut out = String::with_capacity(WIDTH * WIDTH * 10);
+        out.push('\n');
+        out.push_str(TOP);
+        for (i, row) in self.state.iter().enumerate() {
+            out.push_str(BAR);
+            for (j, val) in row.iter().enumerate() {
+                out.push_str(format!("{} ", SYMBOLS[*val as usize]).as_str());
+                if j % BOX_SIZE == (BOX_SIZE - 1) && j != (WIDTH - 1) {
+                    out.push_str(BAR);
+                }
+            }
+            out.push_str(BAR);
+            out.push('\n');
+            if i % BOX_SIZE == (BOX_SIZE - 1) && i != (WIDTH - 1) {
+                out.push_str(DIVIDER);
+            };
+        }
+        out.push_str(BOTTOM);
+        write!(f, "{}", out)
     }
 }

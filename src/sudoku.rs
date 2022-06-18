@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter, self};
+use std::{fmt::{Display, Formatter, self}, convert::TryInto};
 
 const UNASSIGNED: u8 = 0;
 const SYMBOLS: [char; 10] = ['.', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
@@ -11,11 +11,12 @@ const BOX_SIZE: usize = 3;
 const WIDTH: usize = BOX_SIZE * BOX_SIZE;
 const HEIGHT: usize = BOX_SIZE * BOX_SIZE;
 const NUM_LOCATIONS: usize = WIDTH * HEIGHT;
+#[allow(clippy::cast_possible_truncation)]
 const MAX_VALUE: u8 = (BOX_SIZE * BOX_SIZE) as u8;
 const EMPTY: u8 = 0;
 
 #[derive(Clone)]
-pub struct SudokuBoard {
+pub struct Board {
     state: [[u8; WIDTH]; WIDTH],
 }
 
@@ -23,17 +24,17 @@ struct BoxIterator<'a> {
     row: usize,
     col: usize,
     sentinel: usize,
-    board: &'a SudokuBoard,
+    board: &'a Board,
 }
 
 pub struct GlobalIterator<'a> {
     row: usize,
     col: usize,
-    board: &'a SudokuBoard,
+    board: &'a Board,
 }
 
 impl BoxIterator<'_> {
-    fn new(board: &SudokuBoard, x: usize) -> BoxIterator {
+    const fn new(board: &Board, x: usize) -> BoxIterator {
         let row = ((x / WIDTH) / BOX_SIZE) * BOX_SIZE;
         let col = ((x % WIDTH) / BOX_SIZE) * BOX_SIZE;
         let sentinel = row + BOX_SIZE;
@@ -45,7 +46,7 @@ impl BoxIterator<'_> {
         }
     }
 
-    fn from_id(board: &SudokuBoard, x: usize) -> BoxIterator {
+    const fn from_id(board: &Board, x: usize) -> BoxIterator {
         let row = (x / BOX_SIZE) * BOX_SIZE;
         let col = (x % BOX_SIZE) * BOX_SIZE;
         let sentinel = row + BOX_SIZE;
@@ -74,7 +75,7 @@ impl BoxIterator<'_> {
 }
 
 impl GlobalIterator<'_> {
-    fn new(board: &SudokuBoard) -> GlobalIterator {
+    const fn new(board: &Board) -> GlobalIterator {
         GlobalIterator {
             row: 0,
             col: 0,
@@ -114,22 +115,22 @@ impl Iterator for GlobalIterator<'_> {
     }
 }
 
-impl SudokuBoard {
-    pub fn from_string(fen: &str) -> Result<SudokuBoard, String> {
-        if !SudokuBoard::is_string_valid(fen) {
-            Err(format!(
+impl Board {
+    pub fn from_string(fen: &str) -> Result<Self, String> {
+        if !Self::is_string_valid(fen) {
+            return Err(format!(
                 "input string invalid (you may only use digits and dashes in your input): \"{}\"",
                 fen
             ))
+        }
+        let mut out = Self {
+            state: [[0; WIDTH]; WIDTH],
+        };
+        out.set_from_string(fen);
+        if out.current_state_invalid() {
+            Err("input sudoku invalid (given problem has repeated digits in rows, columns, or squares).".into())
         } else {
-            let mut out = SudokuBoard {
-                state: [[0; WIDTH]; WIDTH],
-            };
-            out.set_from_string(fen);
-            match out.current_state_invalid() {
-                false => Ok(out),
-                true => Err("input sudoku invalid (given problem has repeated digits in rows, columns, or squares).".to_string())
-            }
+            Ok(out)
         }
     }
 
@@ -137,7 +138,7 @@ impl SudokuBoard {
         for (i, c) in fen.chars().enumerate() {
             if c != '-' {
                 self.state[i / WIDTH][i % WIDTH] =
-                    c.to_digit(10).expect("this should have been validated >:(") as u8;
+                    c.to_digit(10).expect("this should have been validated >:(").try_into().unwrap();
             }
         }
     }
@@ -147,11 +148,11 @@ impl SudokuBoard {
         fen.chars().all(|c| LEGALS.contains(&c))
     }
 
-    fn is_unassigned(&self, loc: usize) -> bool {
+    const fn is_unassigned(&self, loc: usize) -> bool {
         self.state[loc / WIDTH][loc % WIDTH] == 0
     }
 
-    fn is_unassigned_xy(&self, x: usize, y: usize) -> bool {
+    const fn is_unassigned_xy(&self, x: usize, y: usize) -> bool {
         self.state[x][y] == 0
     }
 
@@ -201,11 +202,11 @@ impl SudokuBoard {
         false
     }
 
-    pub fn iter(&self) -> GlobalIterator {
+    pub const fn iter(&self) -> GlobalIterator {
         GlobalIterator::new(self)
     }
 
-    fn box_iter(&self, x: usize) -> BoxIterator {
+    const fn box_iter(&self, x: usize) -> BoxIterator {
         BoxIterator::new(self, x)
     }
 
@@ -400,14 +401,14 @@ impl SudokuBoard {
     }
 
     pub fn solve(&mut self) -> bool {
-        debug_assert!(!self.current_state_invalid());
+        assert!(!self.current_state_invalid());
         self.preproc();
-        debug_assert!(!self.current_state_invalid());
+        assert!(!self.current_state_invalid());
         self.solve_dfs()
     }
 }
 
-impl Display for SudokuBoard {
+impl Display for Board {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         let mut out = String::with_capacity(WIDTH * WIDTH * 10);
         out.push('\n');

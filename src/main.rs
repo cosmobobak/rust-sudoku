@@ -1,9 +1,10 @@
+#![warn(clippy::all, clippy::pedantic, clippy::nursery)]
 #![allow(dead_code)]
 
 mod sudoku;
 mod sudoku16;
 
-use crate::sudoku::SudokuBoard;
+use crate::sudoku16::SudokuBoard16;
 
 // easy: ----345----89---3-3----27892-4--6815----4----8765--4-27523----6-1---79----942----
 // medium: ---4-6-9------3--545-----866-2-74--1----9----9--56-7-871-----643--6------6-9-2---
@@ -15,15 +16,15 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() <= 1 {
         println!("no input string provided.");
-        std::process::exit(0);
+        return;
     }
 
     // object is created
-    let mut b = match SudokuBoard::from_string(&args[1]) {
+    let mut b = match SudokuBoard16::from_string(&args[1]) {
         Ok(b) => b,
         Err(e) => {
             println!("{}", e);
-            std::process::exit(0);
+            return;
         }
     };
 

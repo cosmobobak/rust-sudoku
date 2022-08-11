@@ -18,7 +18,7 @@ impl Display for StringValidityError {
         match self {
             Self::InvalidLength { expected, actual } => write!(f, "string is too long, expected string of at most {expected} characters, got {actual}"),
             Self::CharIllegal(c) => write!(f, "character '{c}' is not a legal character for sudoku strings"),
-            Self::CharOutOfRange { c, max } => write!(f, "character '{c}' is out of range, expected characters in \"{}\"", std::str::from_utf8(&SYMBOLS[..*max]).unwrap()),
+            Self::CharOutOfRange { c, max } => write!(f, "character '{c}' is out of range, expected characters in \"{}\"\nconsider changing the requested size of your sudoku if you expected this to work", std::str::from_utf8(&SYMBOLS[..*max]).unwrap()),
         }
     }
 }

@@ -1,44 +1,54 @@
-use std::{fmt::{Display, Formatter, self}, convert::TryInto};
+use std::{
+    convert::TryInto,
+    fmt::{self, Display, Formatter},
+};
 
 const UNASSIGNED: u8 = 0;
-const SYMBOLS: [char; 10] = ['.', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-const DIVIDER: &str = "├───────┼───────┼───────┤\n";
-const TOP: &str = "┌───────┬───────┬───────┐\n";
-const BOTTOM: &str = "└───────┴───────┴───────┘";
-const BAR: &str = "│ ";
+static SYMBOLS: [u8; 37] = *b".1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+static BAR: &str = "│ ";
 
-const BOX_SIZE: usize = 3;
-const WIDTH: usize = BOX_SIZE * BOX_SIZE;
-const HEIGHT: usize = BOX_SIZE * BOX_SIZE;
-const NUM_LOCATIONS: usize = WIDTH * HEIGHT;
-#[allow(clippy::cast_possible_truncation)]
-const MAX_VALUE: u8 = (BOX_SIZE * BOX_SIZE) as u8;
-const EMPTY: u8 = 0;
-
-#[derive(Clone)]
-pub struct Board {
-    state: [[u8; WIDTH]; WIDTH],
+enum StringValidityError {
+    InvalidLength { expected: usize, actual: usize },
+    CharIllegal(char),
+    CharOutOfRange { c: char, max: usize },
 }
 
-struct BoxIterator<'a> {
+impl Display for StringValidityError {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        match self {
+            Self::InvalidLength { expected, actual } => write!(f, "string is too long, expected string of at most {expected} characters, got {actual}"),
+            Self::CharIllegal(c) => write!(f, "character '{c}' is not a legal character for sudoku strings"),
+            Self::CharOutOfRange { c, max } => write!(f, "character '{c}' is out of range, expected characters in \"{}\"", std::str::from_utf8(&SYMBOLS[..*max]).unwrap()),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Board<const BOX_SIZE: usize> {
+    state: Vec<u8>,
+}
+
+struct BoxIterator<'a, const BOX_SIZE: usize> {
     row: usize,
     col: usize,
     sentinel: usize,
-    board: &'a Board,
+    board: &'a Board<BOX_SIZE>,
 }
 
-pub struct GlobalIterator<'a> {
+pub struct GlobalIterator<'a, const BOX_SIZE: usize> {
     row: usize,
     col: usize,
-    board: &'a Board,
+    board: &'a Board<BOX_SIZE>,
 }
 
-impl BoxIterator<'_> {
-    const fn new(board: &Board, x: usize) -> BoxIterator {
-        let row = ((x / WIDTH) / BOX_SIZE) * BOX_SIZE;
-        let col = ((x % WIDTH) / BOX_SIZE) * BOX_SIZE;
+impl<'a, const BOX_SIZE: usize> BoxIterator<'a, BOX_SIZE> {
+    const WIDTH: usize = BOX_SIZE * BOX_SIZE;
+
+    const fn new(board: &'a Board<BOX_SIZE>, x: usize) -> Self {
+        let row = ((x / Self::WIDTH) / BOX_SIZE) * BOX_SIZE;
+        let col = ((x % Self::WIDTH) / BOX_SIZE) * BOX_SIZE;
         let sentinel = row + BOX_SIZE;
-        BoxIterator {
+        Self {
             row,
             col,
             sentinel,
@@ -46,11 +56,11 @@ impl BoxIterator<'_> {
         }
     }
 
-    const fn from_id(board: &Board, x: usize) -> BoxIterator {
+    const fn from_id(board: &'a Board<BOX_SIZE>, x: usize) -> Self {
         let row = (x / BOX_SIZE) * BOX_SIZE;
         let col = (x % BOX_SIZE) * BOX_SIZE;
         let sentinel = row + BOX_SIZE;
-        BoxIterator {
+        Self {
             row,
             col,
             sentinel,
@@ -62,7 +72,7 @@ impl BoxIterator<'_> {
         let result = if self.row == self.sentinel {
             None
         } else {
-            Some(self.board.state[self.row][self.col])
+            Some(self.board.state[self.row * Self::WIDTH + self.col])
         };
         if (self.col) % BOX_SIZE == (BOX_SIZE - 1) {
             self.col -= BOX_SIZE - 1;
@@ -74,9 +84,12 @@ impl BoxIterator<'_> {
     }
 }
 
-impl GlobalIterator<'_> {
-    const fn new(board: &Board) -> GlobalIterator {
-        GlobalIterator {
+impl<'a, const BOX_SIZE: usize> GlobalIterator<'a, BOX_SIZE> {
+    const WIDTH: usize = BOX_SIZE * BOX_SIZE;
+    const HEIGHT: usize = BOX_SIZE * BOX_SIZE;
+
+    const fn new(board: &'a Board<BOX_SIZE>) -> Self {
+        Self {
             row: 0,
             col: 0,
             board,
@@ -84,12 +97,12 @@ impl GlobalIterator<'_> {
     }
 
     fn next(&mut self) -> Option<u8> {
-        let result = if self.row == HEIGHT {
+        let result = if self.row == Self::HEIGHT {
             None
         } else {
-            Some(self.board.state[self.row][self.col])
+            Some(self.board.state[self.row * Self::WIDTH + self.col])
         };
-        if self.col == (WIDTH - 1) {
+        if self.col == (Self::WIDTH - 1) {
             self.col = 0;
             self.row += 1;
         } else {
@@ -99,7 +112,7 @@ impl GlobalIterator<'_> {
     }
 }
 
-impl Iterator for BoxIterator<'_> {
+impl<const BOX_SIZE: usize> Iterator for BoxIterator<'_, BOX_SIZE> {
     type Item = u8;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -107,7 +120,7 @@ impl Iterator for BoxIterator<'_> {
     }
 }
 
-impl Iterator for GlobalIterator<'_> {
+impl<const BOX_SIZE: usize> Iterator for GlobalIterator<'_, BOX_SIZE> {
     type Item = u8;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -115,16 +128,18 @@ impl Iterator for GlobalIterator<'_> {
     }
 }
 
-impl Board {
-    pub fn from_string(fen: &str) -> Result<Self, String> {
-        if !Self::is_string_valid(fen) {
-            return Err(format!(
-                "input string invalid (you may only use digits and dashes in your input): \"{}\"",
-                fen
-            ))
+impl<const BOX_SIZE: usize> Board<BOX_SIZE> {
+    const WIDTH: usize = BOX_SIZE * BOX_SIZE;
+    const NUM_LOCATIONS: usize = Self::WIDTH * Self::WIDTH;
+    #[allow(clippy::cast_possible_truncation)]
+    const MAX_VALUE: u8 = Self::WIDTH as u8;
+
+    pub fn from_str(fen: &str) -> Result<Self, String> {
+        if let Err(e) = Self::is_string_valid(fen) {
+            return Err(format!("input string invalid: {e}",));
         }
         let mut out = Self {
-            state: [[0; WIDTH]; WIDTH],
+            state: vec![UNASSIGNED; Self::NUM_LOCATIONS],
         };
         out.set_from_string(fen);
         if out.current_state_invalid() {
@@ -135,51 +150,74 @@ impl Board {
     }
 
     fn set_from_string(&mut self, fen: &str) {
+        self.state.fill(UNASSIGNED);
         for (i, c) in fen.chars().enumerate() {
             if c != '-' {
-                self.state[i / WIDTH][i % WIDTH] =
-                    c.to_digit(10).expect("this should have been validated >:(").try_into().unwrap();
+                self.state[i] = SYMBOLS
+                    .iter()
+                    .position(|&x| x == c as u8)
+                    .unwrap()
+                    .try_into()
+                    .unwrap();
             }
         }
     }
 
-    fn is_string_valid(fen: &str) -> bool {
-        const LEGALS: [char; 10] = ['-', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-        fen.chars().all(|c| LEGALS.contains(&c))
+    fn is_string_valid(fen: &str) -> Result<(), StringValidityError> {
+        if fen.len() > Self::NUM_LOCATIONS {
+            return Err(StringValidityError::InvalidLength {
+                expected: Self::NUM_LOCATIONS,
+                actual: fen.len(),
+            });
+        }
+        for c in fen.chars() {
+            let idx_in_symbols = SYMBOLS.iter().position(|&x| x as char == c);
+            if idx_in_symbols.is_none() {
+                return Err(StringValidityError::CharIllegal(c));
+            }
+            if idx_in_symbols.unwrap() > Self::WIDTH {
+                return Err(StringValidityError::CharOutOfRange {
+                    c,
+                    max: Self::WIDTH,
+                });
+            }
+        }
+        Ok(())
     }
 
-    const fn is_unassigned(&self, loc: usize) -> bool {
-        self.state[loc / WIDTH][loc % WIDTH] == 0
-    }
-
-    const fn is_unassigned_xy(&self, x: usize, y: usize) -> bool {
-        self.state[x][y] == 0
+    fn is_unassigned(&self, loc: usize) -> bool {
+        self.state[loc] == 0
     }
 
     fn constraints(&self, loc: usize) -> usize {
-        let num_constraints_in_row = self.state[loc / WIDTH].iter().filter(|v| **v != 0).count();
+        let start_of_row = loc / Self::WIDTH * Self::WIDTH;
+        let row = &self.state[start_of_row..start_of_row + Self::WIDTH];
+        let num_constraints_in_row = row.iter().filter(|v| **v != 0).count();
+        let start_of_col = loc % Self::WIDTH;
         let num_constraints_in_col = self
             .state
             .iter()
-            .map(|row| row[loc % WIDTH])
-            .filter(|v| *v != 0)
+            .skip(start_of_col)
+            .step_by(Self::WIDTH)
+            .take(Self::WIDTH)
+            .filter(|v| **v != 0)
             .count();
+        debug_assert_eq!(
+            self.state
+                .iter()
+                .skip(start_of_col)
+                .step_by(Self::WIDTH)
+                .take(Self::WIDTH)
+                .count(),
+            Self::WIDTH
+        );
         num_constraints_in_row + num_constraints_in_col
-    }
-
-    pub fn first_unassigned(&self) -> Option<usize> {
-        for loc in 0..NUM_LOCATIONS {
-            if self.is_unassigned(loc) {
-                return Some(loc);
-            }
-        }
-        None
     }
 
     pub fn most_constrained(&mut self) -> Option<usize> {
         let mut max = 0;
         let mut loc = None;
-        for i in 0..NUM_LOCATIONS {
+        for i in 0..Self::NUM_LOCATIONS {
             if self.is_unassigned(i) && (self.constraints(i) > max || loc.is_none()) {
                 max = self.constraints(i);
                 loc = Some(i);
@@ -189,42 +227,57 @@ impl Board {
     }
 
     fn current_state_invalid(&mut self) -> bool {
-        for i in 0..NUM_LOCATIONS {
-            let n = self.state[i / WIDTH][i % WIDTH];
+        for i in 0..Self::NUM_LOCATIONS {
+            let n = self.state[i];
             if n != UNASSIGNED {
-                self.state[i / WIDTH][i % WIDTH] = 0;
+                self.state[i] = 0;
                 if !self.legal(i, n) {
                     return true;
                 }
-                self.state[i / WIDTH][i % WIDTH] = n;
+                self.state[i] = n;
             }
         }
         false
     }
 
-    pub const fn iter(&self) -> GlobalIterator {
+    pub const fn iter(&self) -> GlobalIterator<BOX_SIZE> {
         GlobalIterator::new(self)
     }
 
-    const fn box_iter(&self, x: usize) -> BoxIterator {
+    const fn box_iter(&self, x: usize) -> BoxIterator<BOX_SIZE> {
         BoxIterator::new(self, x)
     }
 
+    fn row_iter(&self, loc: usize) -> impl Iterator<Item = &u8> {
+        let row_start = loc / Self::WIDTH * Self::WIDTH;
+        self.state[row_start..row_start + Self::WIDTH].iter()
+    }
+
+    fn col_iter(&self, loc: usize) -> impl Iterator<Item = &u8> {
+        let col_start = loc % Self::WIDTH;
+        self.state
+            .iter()
+            .skip(col_start)
+            .step_by(Self::WIDTH)
+            .take(Self::WIDTH)
+    }
+
     fn legal(&self, x: usize, num: u8) -> bool {
-        self.state[x / WIDTH].iter().all(|n| *n != num)
-            && self.state.iter().all(|row| row[x % WIDTH] != num)
+        self.row_iter(x).all(|n| *n != num)
+            && self.col_iter(x).all(|n| *n != num)
             && self.box_iter(x).all(|n| n != num)
     }
 
     fn legal_xy(&self, x: usize, y: usize, num: u8) -> bool {
-        self.state[x].iter().all(|n| *n != num)
-            && self.state.iter().all(|row| row[y] != num)
-            && self.box_iter(x * WIDTH + y).all(|n| n != num)
+        let x = x * Self::WIDTH + y;
+        self.row_iter(x).all(|n| *n != num)
+            && self.col_iter(x).all(|n| *n != num)
+            && self.box_iter(x).all(|n| n != num)
     }
 
     fn options_for_loc(&self, x: usize) -> usize {
         let mut options = 0;
-        for num in 1..=MAX_VALUE {
+        for num in 1..=Self::MAX_VALUE {
             if self.legal(x, num) {
                 options += 1;
             }
@@ -232,21 +285,8 @@ impl Board {
         options
     }
 
-    fn is_loc_single_constrained(&self, x: usize) -> bool {
-        let mut options = 0;
-        for num in 1..=MAX_VALUE {
-            if self.legal(x, num) {
-                options += 1;
-                if options > 1 {
-                    return false;
-                }
-            }
-        }
-        options == 1
-    }
-
     fn first_legal_for_loc(&self, x: usize) -> Option<u8> {
-        for num in 1..=MAX_VALUE {
+        for num in 1..=Self::MAX_VALUE {
             if self.legal(x, num) {
                 return Some(num);
             }
@@ -263,7 +303,7 @@ impl Board {
                 continue;
             }
             if self.options_for_loc(x) == 1 {
-                self.state[x / WIDTH][x % WIDTH] = self.first_legal_for_loc(x).unwrap();
+                self.state[x] = self.first_legal_for_loc(x).unwrap();
                 return true;
             }
         }
@@ -277,7 +317,7 @@ impl Board {
         let row_tl = (box_num / BOX_SIZE) * BOX_SIZE;
         let col_tl = (box_num % BOX_SIZE) * BOX_SIZE;
         let mut mutated = false;
-        for num in 1..=MAX_VALUE {
+        for num in 1..=Self::MAX_VALUE {
             let mut found_single_option = false;
             let mut row = 0;
             let mut col = 0;
@@ -298,8 +338,8 @@ impl Board {
                 }
             }
             if found_single_option {
-                debug_assert!(self.state[row][col] == UNASSIGNED);
-                self.state[row][col] = num;
+                debug_assert!(self.state[row * Self::WIDTH + col] == UNASSIGNED);
+                self.state[row * Self::WIDTH + col] = num;
                 mutated = true;
             }
         }
@@ -311,10 +351,13 @@ impl Board {
         // for each option, count how many squares could legally have that option
         // if there is only one such square, fill it in.
         let mut mutated = false;
-        for num in 1..=MAX_VALUE {
+        for num in 1..=Self::MAX_VALUE {
             let mut found_single_option = false;
             let mut col = 0;
-            for (c, &v) in self.state[row].iter().enumerate() {
+            for (c, &v) in self.state[row * Self::WIDTH..(row + 1) * Self::WIDTH]
+                .iter()
+                .enumerate()
+            {
                 if v != UNASSIGNED {
                     continue;
                 }
@@ -328,8 +371,8 @@ impl Board {
                 }
             }
             if found_single_option {
-                debug_assert!(self.state[row][col] == UNASSIGNED);
-                self.state[row][col] = num;
+                debug_assert!(self.state[row * Self::WIDTH + col] == UNASSIGNED);
+                self.state[row * Self::WIDTH + col] = num;
                 mutated = true;
             }
         }
@@ -341,10 +384,17 @@ impl Board {
         // for each option, count how many squares could legally have that option
         // if there is only one such square, fill it in.
         let mut mutated = false;
-        for num in 1..=MAX_VALUE {
+        for num in 1..=Self::MAX_VALUE {
             let mut found_single_option = false;
             let mut row = 0;
-            for (r, v) in self.state.iter().map(|slice| slice[col]).enumerate() {
+            for (r, &v) in self
+                .state
+                .iter()
+                .skip(col)
+                .step_by(Self::WIDTH)
+                .take(Self::WIDTH)
+                .enumerate()
+            {
                 if v != UNASSIGNED {
                     continue;
                 }
@@ -358,8 +408,8 @@ impl Board {
                 }
             }
             if found_single_option {
-                debug_assert!(self.state[row][col] == UNASSIGNED);
-                self.state[row][col] = num;
+                debug_assert!(self.state[row * Self::WIDTH + col] == UNASSIGNED);
+                self.state[row * Self::WIDTH + col] = num;
                 mutated = true;
             }
         }
@@ -373,13 +423,13 @@ impl Board {
             None => return true,
         };
 
-        for num in 1..=MAX_VALUE {
+        for num in 1..=Self::MAX_VALUE {
             if self.legal(x, num) {
-                self.state[x / WIDTH][x % WIDTH] = num;
+                self.state[x] = num;
                 if self.solve_dfs() {
                     return true;
                 }
-                self.state[x / WIDTH][x % WIDTH] = UNASSIGNED;
+                self.state[x] = UNASSIGNED;
             }
         }
         false // this triggers backtracking
@@ -391,7 +441,7 @@ impl Board {
         }
         let mut change_made = true;
         while change_made {
-            change_made = (0..WIDTH).any(|i| {
+            change_made = (0..Self::WIDTH).any(|i| {
                 let a = self.fill_only_in_box(i);
                 let b = self.fill_only_in_row(i);
                 let c = self.fill_only_in_col(i);
@@ -408,26 +458,53 @@ impl Board {
     }
 }
 
-impl Display for Board {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        let mut out = String::with_capacity(WIDTH * WIDTH * 10);
-        out.push('\n');
-        out.push_str(TOP);
-        for (i, row) in self.state.iter().enumerate() {
-            out.push_str(BAR);
-            for (j, val) in row.iter().enumerate() {
-                out.push_str(format!("{} ", SYMBOLS[*val as usize]).as_str());
-                if j % BOX_SIZE == (BOX_SIZE - 1) && j != (WIDTH - 1) {
-                    out.push_str(BAR);
-                }
-            }
-            out.push_str(BAR);
-            out.push('\n');
-            if i % BOX_SIZE == (BOX_SIZE - 1) && i != (WIDTH - 1) {
-                out.push_str(DIVIDER);
-            };
+fn make_divider(left: char, middle: char, right: char, box_size: usize) -> String {
+    let n_boxes_along_edge = box_size;
+    let divider_bar_width = box_size * 2 + 1;
+    let mut s = left.to_string();
+    for _ in 0..divider_bar_width {
+        s.push('─');
+    }
+    for _ in 0..n_boxes_along_edge - 1 {
+        s.push(middle);
+        for _ in 0..divider_bar_width {
+            s.push('─');
         }
-        out.push_str(BOTTOM);
+    }
+    s.push(right);
+    s.push('\n');
+    s
+}
+
+impl<const BOX_SIZE: usize> Display for Board<BOX_SIZE> {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        let top = make_divider('┌', '┬', '┐', BOX_SIZE);
+        let mid = make_divider('├', '┼', '┤', BOX_SIZE);
+        let bot = make_divider('└', '┴', '┘', BOX_SIZE);
+        let mut out = String::with_capacity(Self::WIDTH * Self::WIDTH * 10);
+        out.push('\n');
+        out.push_str(&top);
+        for (i, &v) in self.state.iter().enumerate() {
+            let j = i % Self::WIDTH;
+            let i = i / Self::WIDTH;
+            if j == 0 {
+                out.push_str(BAR);
+            }
+
+            out.push_str(format!("{} ", SYMBOLS[v as usize] as char).as_str());
+            if j % BOX_SIZE == (BOX_SIZE - 1) && j != (Self::WIDTH - 1) {
+                out.push_str(BAR);
+            }
+
+            if j == (Self::WIDTH - 1) {
+                out.push_str(BAR);
+                out.push('\n');
+                if i % BOX_SIZE == (BOX_SIZE - 1) && i != (Self::WIDTH - 1) {
+                    out.push_str(&mid);
+                };
+            }
+        }
+        out.push_str(&bot);
         write!(f, "{}", out)
     }
 }

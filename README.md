@@ -1,5 +1,5 @@
 # rust-sudoku
-Sudoku solver in Rust
+Sudoku solver in Rust, using [clap](https://docs.rs/clap/latest/clap/) for argument parsing.
 
 This solver has support for 4x4, 9x9, 16x16, and 25x25 sudokus.
 

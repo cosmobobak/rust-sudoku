@@ -1,11 +1,25 @@
 # rust-sudoku
 Sudoku solver in Rust
 
-This solver has support for both 9x9 and 16x16 sudokus, and typically runs in <2ms for a 9x9.
+This solver has support for 4x4, 9x9, 16x16, and 25x25 sudokus.
 
 Example usage:
 ```
-$ cargo run -q --release -- --9------384---5------4-3-----1--27-2--3-4--5-48--6-----6-1------7---629-----5---
+$ cargo b --release
+$ target/release/rust-sudoku -h
+rust-sudoku 1.0.0
+cosmobobak
+
+USAGE:
+    rust-sudoku [OPTIONS] --board <SUDOKU_STRING>
+
+OPTIONS:
+    -b, --board <SUDOKU_STRING>    The string describing the sudoku board
+    -h, --help                     Print help information
+    -s, --boxsize <BOXSIZE>        The side length of a box in the sudoku board. (2 for 4x4, 3 for
+                                   9x9, 4 for 16x16, 5 for 25x25) [default: 3]
+    -V, --version                  Print version information
+$ target/release/rust-sudoku -b ..9......384...5......4.3.....1..27.2..3.4..5.48..6.....6.1......7...629.....5...
 
 Your sudoku:
 
@@ -40,6 +54,5 @@ Your solved sudoku:
 └───────┴───────┴───────┘
 
 
-solved in 228.10µs!
-$
+solved in 275.80µs!
 ```

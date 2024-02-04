@@ -51,7 +51,7 @@ fn exec<const BOX_SIZE: usize>(board: &str) {
     // show the solved sudoku
     println!("Your solved sudoku:");
     println!("{b}\n");
-    println!("solved in {:.2?}!", time_taken);
+    println!("solved in {time_taken:.2?}!");
 }
 
 fn main() {

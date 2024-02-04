@@ -286,12 +286,7 @@ impl<const BOX_SIZE: usize> Board<BOX_SIZE> {
     }
 
     fn first_legal_for_loc(&self, x: usize) -> Option<u8> {
-        for num in 1..=Self::MAX_VALUE {
-            if self.legal(x, num) {
-                return Some(num);
-            }
-        }
-        None
+        (1..=Self::MAX_VALUE).find(|&num| self.legal(x, num))
     }
 
     fn fill_trivial(&mut self) -> bool {
@@ -418,9 +413,8 @@ impl<const BOX_SIZE: usize> Board<BOX_SIZE> {
     }
 
     pub fn solve_dfs(&mut self) -> bool {
-        let x = match self.most_constrained() {
-            Some(x) => x,
-            None => return true,
+        let Some(x) = self.most_constrained() else {
+            return true;
         };
 
         for num in 1..=Self::MAX_VALUE {
@@ -505,6 +499,6 @@ impl<const BOX_SIZE: usize> Display for Board<BOX_SIZE> {
             }
         }
         out.push_str(&bot);
-        write!(f, "{}", out)
+        write!(f, "{out}")
     }
 }
